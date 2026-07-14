@@ -1,0 +1,294 @@
+---
+# ==============================================================================
+# PLAY 1: Dynamically Map Terraform Output IPs
+# ==============================================================================
+- name: Parse Terraform Inputs and Create Dynamic Host Groups
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add Web Instance to In-Memory Inventory
+      ansible.builtin.add_host:
+        name: "{{ web_node_ip }}"
+        groups: webservers
+        ansible_user: ec2-user
+
+    - name: Add DB Instance to In-Memory Inventory
+      ansible.builtin.add_host:
+        name: "{{ db_node_ip }}"
+        groups: databases
+        ansible_user: ec2-user
+
+# ==============================================================================
+# PLAY 2: Configure Database Tier (PostgreSQL 16)
+# ==============================================================================
+- name: Provision RHEL 9 PostgreSQL Database Server
+  hosts: databases
+  become: true
+  tasks:
+    - name: Install PostgreSQL 16 server packages via AppStream
+      ansible.builtin.dnf:
+        name: "@postgresql:16/server"
+        state: present
+
+    - name: Check if PostgreSQL database is initialized
+      ansible.builtin.stat:
+        path: /var/lib/pgsql/data/PG_VERSION
+      register: pg_initialized
+
+    - name: Initialize PostgreSQL database engine
+      ansible.builtin.command: postgresql-setup --initdb
+      when: not pg_initialized.stat.exists
+
+    - name: Allow PostgreSQL to listen on all interfaces
+      ansible.builtin.lineinfile:
+        path: /var/lib/pgsql/data/postgresql.conf
+        regexp: "^#?listen_addresses\\s*="
+        line: "listen_addresses = '*'"
+      notify: Restart postgresql
+
+    - name: Authorize ingress MD5 authentication from the Web tier IP
+      ansible.builtin.lineinfile:
+        path: /var/lib/pgsql/data/pg_hba.conf
+        line: "host all all {{ hostvars['localhost']['web_node_ip'] }}/32 md5"
+      notify: Restart postgresql
+
+    - name: Ensure firewalld is running
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Permit inbound database connections on firewalld
+      ansible.posix.firewalld:
+        service: postgresql
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Start and enable PostgreSQL service
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+        enabled: true
+
+    # Required so Ansible DB modules can communicate with PostgreSQL
+    - name: Install Python Pg adapter
+      ansible.builtin.dnf:
+        name: python3-psycopg2
+        state: present
+
+    - name: Create the Weather dashboard application database
+      community.postgresql.postgresql_db:
+        name: weather_db
+      become: true
+      become_user: postgres
+
+    - name: Generate the secure web app user inside Postgres
+      community.postgresql.postgresql_user:
+        db: weather_db
+        name: weather_user
+        password: "SuperSecurePassword123!"
+        priv: ALL
+      become: true
+      become_user: postgres
+
+  handlers:
+    - name: Restart postgresql
+      ansible.builtin.systemd:
+        name: postgresql
+        state: restarted
+
+# ==============================================================================
+# PLAY 3: Configure Web/App Tier (Python 3.11, Gunicorn, Nginx & SELinux)
+# ==============================================================================
+- name: Provision RHEL 9 Web & Application Server
+  hosts: webservers
+  become: true
+  tasks:
+    - name: Install system dependencies from RHEL 9 repositories
+      ansible.builtin.dnf:
+        name:
+          - python3.11
+          - python3.11-pip
+          - python3.11-devel
+          - gcc
+          - git
+          - nginx
+          - firewalld
+        state: present
+
+    - name: Ensure firewalld is running
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Open Web ports on firewalld
+      ansible.posix.firewalld:
+        service: "{{ item }}"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop:
+        - http
+        - https
+
+    - name: Create application deployment directory
+      ansible.builtin.file:
+        path: /var/www/weather-app
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+
+    - name: Clone Weather application source from repository
+      ansible.builtin.git:
+        repo: 'https://github.com/benfor76/demo-ansible-terraform.git'
+        dest: /var/www/weather-app
+        version: main
+        force: true
+      become: false # Run as ec2-user to preserve permissions
+
+    - name: Build Python 3.11 Virtual Environment and install framework deps
+      ansible.builtin.pip:
+        name:
+          - django
+          - gunicorn
+          - psycopg2-binary
+          - requests
+        virtualenv: /var/www/weather-app/venv
+        virtualenv_command: /usr/bin/python3.11 -m venv
+      become: false
+
+    - name: Generate production environment configuration (.env)
+      ansible.builtin.copy:
+        dest: /var/www/weather-app/.env
+        mode: '0600'
+        owner: ec2-user
+        content: |
+          DEBUG=False
+          SECRET_KEY="demo-secret-key-aap-terraform"
+          DB_NAME=weather_db
+          DB_USER=weather_user
+          DB_PASSWORD=SuperSecurePassword123!
+          DB_HOST={{ hostvars['localhost']['db_node_ip'] }}
+          DB_PORT=5432
+          WEATHER_API_KEY=dummy_or_valid_api_key
+
+    # Run Database Migrations to auto-generate the Django Schema in PostgreSQL
+    - name: Run Django database migrations
+      ansible.builtin.django_manage:
+        command: migrate
+        project_path: /var/www/weather-app
+        virtualenv: /var/www/weather-app/venv
+      become: false
+
+    - name: Collect static assets
+      ansible.builtin.django_manage:
+        command: collectstatic
+        project_path: /var/www/weather-app
+        virtualenv: /var/www/weather-app/venv
+      become: false
+
+    - name: Configure Gunicorn Systemd Unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/gunicorn.service
+        content: |
+          [Unit]
+          Description=Gunicorn process manager for Weather App
+          After=network.target
+
+          [Service]
+          User=ec2-user
+          Group=nginx
+          WorkingDirectory=/var/www/weather-app
+          ExecStart=/var/www/weather-app/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 weather_project.wsgi:application
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart gunicorn
+
+    # Enterprise Hardening Showcase: SELinux Configuration
+    - name: Allow Nginx to connect upstream over network socket
+      ansible.posix.seboolean:
+        name: httpd_can_network_connect
+        state: true
+        persistent: true
+
+    - name: Set SELinux context on Static Assets folder for Nginx readability
+      community.general.sefcontext:
+        target: '/var/www/weather-app/static(/.*)?'
+        setype: httpd_sys_content_t
+        state: present
+      register: static_secontext
+
+    - name: Enforce static assets SELinux context changes
+      ansible.builtin.command: restorecon -R /var/www/weather-app/static
+      when: static_secontext.changed
+
+    - name: Write Nginx reverse-proxy deployment block
+      ansible.builtin.copy:
+        dest: /etc/nginx/conf.d/weather.conf
+        content: |
+          server {
+              listen 80;
+              server_name _;
+
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              }
+
+              location /static/ {
+                  alias /var/www/weather-app/static/;
+              }
+          }
+      notify: Restart nginx
+
+    - name: Start Web Services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - gunicorn
+        - nginx
+
+  handlers:
+    - name: Restart gunicorn
+      ansible.builtin.systemd:
+        name: gunicorn
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+
+# ==============================================================================
+# PLAY 4: Smoke Test the Deployment
+# ==============================================================================
+- name: Execute End-to-End Smoke Test
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Query application homepage with retries
+      ansible.builtin.uri:
+        url: "http://{{ web_node_ip }}/"
+        return_content: true
+        status_code: 200
+        timeout: 10
+      register: web_smoke_test
+      retries: 6
+      delay: 10
+      until: web_smoke_test.status == 200
+
+    - name: Verify application dashboard contents
+      ansible.builtin.assert:
+        that:
+          - "'Weather' in web_smoke_test.content"
+        fail_msg: "Demo Verification Failed: Site responded, but weather metadata is missing."
+        success_msg: "DEMO SUCCESSFUL: Weather Application is active and verified at http://{{ web_node_ip }}/"
