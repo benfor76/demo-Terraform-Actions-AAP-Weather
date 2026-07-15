@@ -123,7 +123,7 @@ resource "aws_eip" "web_eip" {
   # --- FIXED: The lifecycle block is now safely nested inside the aws_eip resource ---
   lifecycle {
     action_trigger {
-      events  = ["after_create"] # FIXED: Wrapped event keyword in quotes
+      events  = [after_create] # FIXED: Wrapped event keyword in quotes
       actions = [action.aap_job_launch.configure_weather_app]
     }
   }
