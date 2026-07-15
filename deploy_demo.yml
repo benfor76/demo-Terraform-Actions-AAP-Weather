@@ -227,21 +227,34 @@
 
           [Install]
           WantedBy=multi-user.target
-      notify: Restart gunicorn
+      notify: Force refresh Gunicorn process application state
 
     # Enterprise Hardening Showcase: SELinux Configuration
-    - name: Allow Nginx to connect upstream over network socket
-      ansible.posix.seboolean:
-        name: httpd_can_network_connect
-        state: true
-        persistent: true
+    #- name: Allow Nginx to connect upstream over network socket
+    #  ansible.posix.seboolean:
+    #    name: httpd_can_network_connect
+    #    state: true
+    #    persistent: true
 
-    - name: Set SELinux context on Static Assets folder for Nginx readability
-      community.general.sefcontext:
-        target: '/var/www/weather-app/static(/.*)?'
-        setype: httpd_sys_content_t
-        state: present
-      register: static_secontext
+    - name: Allow Nginx to connect upstream over network socket
+      ansible.builtin.command: setsebool -P httpd_can_network_connect 1
+      changed_when: false
+
+    #- name: Set SELinux context on Static Assets folder for Nginx readability
+    #  community.general.sefcontext:
+    #    target: '/var/www/weather-app/static(/.*)?'
+    #    setype: httpd_sys_content_t
+    #    state: present
+    #  register: static_secontext
+
+    # NEW FIXED TASKS (Uses native RHEL core utilities)
+    - name: Configure SELinux contexts for Nginx web visibility
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - semanage fcontext -a -t httpd_sys_content_t "/var/www/weather-app/static(/.*)?"
+        - restorecon -R /var/www/weather-app/static
+      failed_when: false # Prevents crashing if the rule already exists in the SELinux policy
+      changed_when: false
 
     - name: Enforce static assets SELinux context changes
       ansible.builtin.command: restorecon -R /var/www/weather-app/static
@@ -275,14 +288,14 @@
         enabled: true
         daemon_reload: true # <-- THE FIX: Forces systemd to parse the new gunicorn file immediately
       loop:
-        - gunicorn
         - nginx
 
   handlers:
-    - name: Restart gunicorn
+    - name: Force refresh Gunicorn process application state
       ansible.builtin.systemd:
         name: gunicorn
         state: restarted
+        enabled: true
         daemon_reload: true
 
     - name: Restart nginx
