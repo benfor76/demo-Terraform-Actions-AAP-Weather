@@ -256,6 +256,15 @@
       failed_when: false # Prevents crashing if the rule already exists in the SELinux policy
       changed_when: false
 
+    # --- ADD THIS NEW TASK TO ALLOW SYSTEMD TO LAUNCH GUNICORN ---
+    - name: Configure SELinux contexts for Gunicorn Execution (Venv Binaries)
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - semanage fcontext -a -t bin_t "/var/www/weather-app/venv/bin(/.*)?"
+        - restorecon -R /var/www/weather-app/venv/bin
+      failed_when: false
+      changed_when: false
+
     - name: Write Nginx reverse-proxy deployment block
       ansible.builtin.copy:
         dest: /etc/nginx/conf.d/weather.conf
