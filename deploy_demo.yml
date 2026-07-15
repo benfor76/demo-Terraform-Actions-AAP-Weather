@@ -273,6 +273,7 @@
         name: "{{ item }}"
         state: started
         enabled: true
+        daemon_reload: true # <-- THE FIX: Forces systemd to parse the new gunicorn file immediately
       loop:
         - gunicorn
         - nginx
