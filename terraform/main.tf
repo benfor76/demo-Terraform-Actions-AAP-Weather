@@ -18,6 +18,7 @@ provider "aws" {
 provider "aap" {
   host  = var.aap_hostname  # e.g., "https://aap.yourdomain.com"
   token = var.aap_token     # Securely passed or injected via environment variable
+  insecure_skip_verify = true # <-- ADD THIS LINE TO FIX THE TLS ERROR
   
   # insecure_skip_verify = true # Uncomment if your demo lab uses a self-signed TLS cert
 }
