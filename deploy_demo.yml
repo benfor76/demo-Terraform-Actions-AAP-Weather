@@ -201,6 +201,13 @@
           DB_PORT=5432
           WEATHER_API_KEY=dummy_or_valid_api_key
 
+    # Add this task right before the Django database migrations task
+    - name: Ensure manage.py is executable
+      ansible.builtin.file:
+        path: /var/www/weather-app/manage.py
+        mode: '0755'
+      become: false # Keeps file ownership as ec2-user
+
     # Run Database Migrations to auto-generate the Django Schema in PostgreSQL
     - name: Run Django database migrations
       ansible.builtin.django_manage:
