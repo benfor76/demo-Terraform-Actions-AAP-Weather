@@ -51,10 +51,18 @@
         line: "listen_addresses = '*'"
       notify: Restart postgresql
 
-    - name: Authorize ingress MD5 authentication from the Web tier IP
+    #- name: Authorize ingress MD5 authentication from the Web tier IP
+    #  ansible.builtin.lineinfile:
+    #    path: /var/lib/pgsql/data/pg_hba.conf
+    #    line: "host all all {{ hostvars['localhost']['web_node_ip'] }}/32 md5"
+    #  notify: Restart postgresql
+    #####FIX#########
+
+    # NEW TASK (Trusts Internal Private VPC Subnet)
+    - name: Authorize ingress authentication from the internal VPC network
       ansible.builtin.lineinfile:
         path: /var/lib/pgsql/data/pg_hba.conf
-        line: "host all all {{ hostvars['localhost']['web_node_ip'] }}/32 md5"
+        line: "host all all 10.0.0.0/16 scram-sha-256"
       notify: Restart postgresql
 
     - name: Ensure firewalld is running
