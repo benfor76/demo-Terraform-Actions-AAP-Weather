@@ -30,6 +30,11 @@
         name: "@postgresql:16/server"
         state: present
 
+    - name: Install firewalld for database ingress control
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+
     - name: Check if PostgreSQL database is initialized
       ansible.builtin.stat:
         path: /var/lib/pgsql/data/PG_VERSION
@@ -118,7 +123,7 @@
         state: present
 
     - name: Ensure firewalld is running
-      ansible.builtin.service:
+      ansible.builtin.systemd:
         name: firewalld
         state: started
         enabled: true
