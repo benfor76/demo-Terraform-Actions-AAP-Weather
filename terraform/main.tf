@@ -101,6 +101,7 @@ resource "aws_instance" "db_tier" {
   subnet_id              = data.aws_subnet.selected.id
   vpc_security_group_ids = [data.aws_security_group.selected.id]
   key_name               = var.key_name
+  associate_public_ip_address = true # <--- ADD THIS LINE
 
   tags = {
     Name        = "AAP-Demo-DB-Tier"
