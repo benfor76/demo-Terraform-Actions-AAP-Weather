@@ -256,10 +256,6 @@
       failed_when: false # Prevents crashing if the rule already exists in the SELinux policy
       changed_when: false
 
-    - name: Enforce static assets SELinux context changes
-      ansible.builtin.command: restorecon -R /var/www/weather-app/static
-      when: static_secontext.changed
-
     - name: Write Nginx reverse-proxy deployment block
       ansible.builtin.copy:
         dest: /etc/nginx/conf.d/weather.conf
