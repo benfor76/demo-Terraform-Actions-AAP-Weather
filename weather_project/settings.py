@@ -3,6 +3,20 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# --- ADD THIS BLOCK TO NATIVELY LOAD THE .ENV FILE ---
+env_file = BASE_DIR / '.env'
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            # Strip whitespace and ignore empty lines or comments
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # Split at the first '=' to separate key and value
+                key, value = line.split('=', 1)
+                # Clean up any wrapping quotes around values and save to os.environ
+                os.environ[key.strip()] = value.strip('"').strip("'").strip()
+# -----------------------------------------------------
+
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-demo-key-12345')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = ['*'] # Allows proxying via Nginx on any RHEL EC2 IP
