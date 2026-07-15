@@ -131,6 +131,7 @@ action "aap_job_launch" "configure_weather_app" {
     # Pass the fresh RHEL 9 IPs straight to Ansible's runtime payload
     extra_vars = jsonencode({
       "web_node_ip" : aws_eip.web_eip.public_ip,
+      "web_node_dns" : aws_eip.web_eip.public_dns,   # <-- ADDED THIS LINE
       "db_node_ip"  : aws_instance.db_tier.private_ip # Best practice: App talks to DB via private network
       "environment" : "demo"
     })

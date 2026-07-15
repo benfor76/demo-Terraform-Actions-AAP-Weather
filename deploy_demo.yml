@@ -143,7 +143,7 @@
 
     - name: Clone Weather application source from repository
       ansible.builtin.git:
-        repo: 'https://github.com/benfor76/demo-ansible-terraform.git'
+        repo: 'https://github.com/benfor76/demo-Terraform-Actions-AAP-Weather.git'
         dest: /var/www/weather-app
         version: main
         force: true
@@ -283,7 +283,7 @@
         timeout: 10
       register: web_smoke_test
       retries: 6
-      delay: 10
+      delay: 15
       until: web_smoke_test.status == 200
 
     - name: Verify application dashboard contents
