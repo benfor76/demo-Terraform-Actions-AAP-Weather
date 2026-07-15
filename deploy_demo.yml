@@ -90,23 +90,6 @@
         name: python3-psycopg2
         state: present
 
-    - name: Create the Weather dashboard application database
-      community.postgresql.postgresql_db:
-        name: weather_db
-      become: true
-      become_user: postgres
-
-    #- name: Generate the secure web app user inside Postgres
-    #  community.postgresql.postgresql_user:
-    #    db: weather_db
-    #    name: weather_user
-    #    password: "SuperSecurePassword123!"
-    #    priv: ALL
-    #  become: true
-    #  become_user: postgres
-
-#############Replacement new Tasks ###########
-# 1. Create the user cleanly
     - name: Generate the secure web app user inside Postgres
       community.postgresql.postgresql_user:
         name: weather_user
@@ -115,13 +98,10 @@
       become: true
       become_user: postgres
 
-    # 2. Grant the database privileges
-    - name: Grant database access privileges to the web app user
-      community.postgresql.postgresql_privs:
-        login_db: weather_db
-        type: database
-        roles: weather_user
-        privs: ALL
+    - name: Create the Weather dashboard application database
+      community.postgresql.postgresql_db:
+        name: weather_db
+        owner: weather_user
         state: present
       become: true
       become_user: postgres
