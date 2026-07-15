@@ -128,6 +128,7 @@ action "aap_job_launch" "configure_weather_app" {
   config {
     job_template_id     = var.aap_job_template_id
     wait_for_completion = true # Keeps 'terraform apply' active until Ansible finishes running
+    wait_for_completion_timeout_seconds = 1200
 
     # Pass the fresh RHEL 9 IPs straight to Ansible's runtime payload
     extra_vars = jsonencode({
