@@ -6,7 +6,7 @@ terraform {
     }
     aap = {
       source  = "ansible/aap"
-      version = "~> 1.5.0" # Action blocks are fully supported here
+      version = "~> 1.5.0"
     }
   }
 }
@@ -16,11 +16,9 @@ provider "aws" {
 }
 
 provider "aap" {
-  host  = var.aap_hostname  # e.g., "https://aap.yourdomain.com"
-  token = var.aap_token     # Securely passed or injected via environment variable
-  insecure_skip_verify = true # <-- ADD THIS LINE TO FIX THE TLS ERROR
-  
-  # insecure_skip_verify = true # Uncomment if your demo lab uses a self-signed TLS cert
+  host                 = var.aap_hostname
+  token                = var.aap_token
+  insecure_skip_verify = true 
 }
 
 # 1. Dynamic VPC Discovery
@@ -67,7 +65,7 @@ data "aws_security_group" "selected" {
 # 4. Discover the latest official RHEL 9 AMI
 data "aws_ami" "rhel9" {
   most_recent = true
-  owners      = ["309956199498"] # Official Red Hat Owner ID
+  owners      = ["309956199498"]
 
   filter {
     name   = "name"
@@ -121,21 +119,28 @@ resource "aws_eip" "web_eip" {
     Name        = "AAP-Provisioned-Web-EIP"
     ManagedBy   = "Ansible-and-Terraform"
   }
+
+  # --- FIXED: The lifecycle block is now safely nested inside the aws_eip resource ---
+  lifecycle {
+    action_trigger {
+      events  = ["after_create"] # FIXED: Wrapped event keyword in quotes
+      actions = [action.aap_job_launch.configure_weather_app]
+    }
+  }
 }
 
 # 7. Launch the AAP Job Template once infrastructure is ready
 action "aap_job_launch" "configure_weather_app" {
   config {
-    job_template_id     = var.aap_job_template_id
-    wait_for_completion = true # Keeps 'terraform apply' active until Ansible finishes running
+    job_template_id                     = var.aap_job_template_id
+    wait_for_completion                 = true 
     wait_for_completion_timeout_seconds = 1200
 
-    # Pass the fresh RHEL 9 IPs straight to Ansible's runtime payload
     extra_vars = jsonencode({
-      "web_node_ip" : aws_eip.web_eip.public_ip,
-      "web_node_dns" : aws_eip.web_eip.public_dns,   # <-- ADDED THIS LINE
-      "db_node_ip"  : aws_instance.db_tier.private_ip # Best practice: App talks to DB via private network
-      "environment" : "demo"
+      "web_node_ip"  : aws_eip.web_eip.public_ip,
+      "web_node_dns" : aws_eip.web_eip.public_dns,   
+      "db_node_ip"   : aws_instance.db_tier.private_ip 
+      "environment"  : "demo"
     })
   }
 }
