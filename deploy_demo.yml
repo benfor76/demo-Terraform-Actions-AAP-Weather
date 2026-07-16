@@ -187,7 +187,7 @@
           DB_PASSWORD=SuperSecurePassword123!
           DB_HOST={{ hostvars['localhost']['db_node_ip'] }}
           DB_PORT=5432
-          WEATHER_API_KEY=dummy_or_valid_api_key
+          WEATHER_API_KEY={{ hostvars['localhost']['weather_api_key'] }} # <-- THE FINAL PIECE
 
     # Add this task right before the Django database migrations task
     - name: Ensure manage.py is executable

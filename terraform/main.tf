@@ -141,6 +141,7 @@ action "aap_job_launch" "configure_weather_app" {
       "web_node_ip"  : aws_eip.web_eip.public_ip,
       "web_node_dns" : aws_eip.web_eip.public_dns,   
       "db_node_ip"   : aws_instance.db_tier.private_ip 
+      "weather_api_key" : var.weather_api_key, # <-- ADD THIS LINE
       "environment"  : "demo"
     })
   }

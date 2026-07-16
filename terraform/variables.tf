@@ -46,3 +46,9 @@ variable "aap_job_template_id" {
   type        = number
   description = "The numerical ID of the Child Template task"
 }
+
+variable "weather_api_key" {
+  type        = string
+  sensitive   = true
+  description = "The live OpenWeatherMap API key"
+}
