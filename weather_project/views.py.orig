@@ -16,29 +16,21 @@ def weather_dashboard(request):
     except Exception as e:
         db_status = f"Disconnected (Error: {str(e)})"
 
-    # 2. Grab weather data (with dynamic mock fallback and ZIP code detection)
+    # 2. Grab weather data (with dynamic mock fallback)
     api_key = os.environ.get('WEATHER_API_KEY', 'dummy_or_valid_api_key')
-    location = request.GET.get('location', 'New York').strip()
-    
-    # Check if the user entered a ZIP code (numeric string) or a City Name (text string)
-    is_zip = location.isdigit()
+    city = request.GET.get('city', 'New York')
     
     weather_data = None
     using_mock = False
 
     if api_key and api_key != 'dummy_or_valid_api_key':
         try:
-            # Dynamically switch endpoint formatting based on input type
-            if is_zip:
-                url = f"http://api.openweathermap.org/data/2.5/weather?zip={location},us&units=imperial&appid={api_key}"
-            else:
-                url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&units=imperial&appid={api_key}"
-                
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&units=imperial&appid={api_key}"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 weather_data = {
-                    'city': data['name'], # OpenWeatherMap automatically resolves ZIP codes into their city names!
+                    'city': data['name'],
                     'temp': round(data['main']['temp']),
                     'desc': data['weather'][0]['description'].title(),
                     'humidity': data['main']['humidity'],
@@ -50,11 +42,10 @@ def weather_dashboard(request):
     # Bulletproof fallback so the demo page ALWAYS loads, even without API credentials
     if not weather_data:
         using_mock = True
-        display_name = f"ZIP Code {location}" if is_zip else location.title()
         weather_data = {
-            'city': f"{display_name} (Demo Mock Mode)",
-            'temp': 72 if is_zip else 68,
-            'desc': 'Sunny with a light breeze' if is_zip else 'Clear skies',
+            'city': f"{city} (Demo Mock Mode)",
+            'temp': 72,
+            'desc': 'Sunny with a light breeze',
             'humidity': 45,
             'wind': 8,
         }
@@ -67,7 +58,7 @@ def weather_dashboard(request):
         'db_host': os.environ.get('DB_HOST', 'localhost')
     }
 
-    # Embedded single-file template with updated text input mappings
+    # Embedded single-file template to eliminate Django file-path issues on deployments
     html_template = """
     <!DOCTYPE html>
     <html lang="en">
@@ -107,10 +98,10 @@ def weather_dashboard(request):
                         <div class="card-body text-center py-4">
                             <form method="GET" class="row g-3 mb-4 justify-content-center">
                                 <div class="col-auto">
-                                    <input type="text" name="location" class="form-control" placeholder="Enter City or ZIP code..." required>
+                                    <input type="text" name="city" class="form-control" placeholder="Enter city name..." required>
                                 </div>
                                 <div class="col-auto">
-                                    <button type="submit" class="btn btn-success">Search Location</button>
+                                    <button type="submit" class="btn btn-success">Update City</button>
                                 </div>
                             </form>
 
