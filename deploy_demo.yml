@@ -153,11 +153,11 @@
         state: directory
         owner: ec2-user
         group: ec2-user
-        mode: '0755'
+        mode: "0755"
 
     - name: Clone Weather application source from repository
       ansible.builtin.git:
-        repo: 'https://github.com/benfor76/demo-Terraform-Actions-AAP-Weather.git'
+        repo: "https://github.com/benfor76/demo-Terraform-Actions-AAP-Weather.git"
         dest: /var/www/weather-app
         version: main
         force: true
@@ -177,7 +177,7 @@
     - name: Generate production environment configuration (.env)
       ansible.builtin.copy:
         dest: /var/www/weather-app/.env
-        mode: '0600'
+        mode: "0600"
         owner: ec2-user
         content: |
           DEBUG=False
@@ -193,7 +193,7 @@
     - name: Ensure manage.py is executable
       ansible.builtin.file:
         path: /var/www/weather-app/manage.py
-        mode: '0755'
+        mode: "0755"
       become: false # Keeps file ownership as ec2-user
 
     # Run Database Migrations to auto-generate the Django Schema in PostgreSQL

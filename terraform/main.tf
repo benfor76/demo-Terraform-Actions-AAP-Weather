@@ -8,6 +8,10 @@ terraform {
       source  = "ansible/aap"
       version = "~> 1.5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 
@@ -18,51 +22,147 @@ provider "aws" {
 provider "aap" {
   host                 = var.aap_hostname
   token                = var.aap_token
-  insecure_skip_verify = true 
+  insecure_skip_verify = true
 }
 
-# 1. Dynamic VPC Discovery
-data "aws_vpc" "selected" {
-  id = startswith(var.vpc_name, "vpc-") ? var.vpc_name : null
+# ==========================================
+# 1. NEW INFRASTRUCTURE RESOURCES
+# ==========================================
 
-  dynamic "filter" {
-    for_each = startswith(var.vpc_name, "vpc-") ? [] : [1]
-    content {
-      name   = "tag:Name"
-      values = [var.vpc_name]
-    }
+# Create VPC
+resource "aws_vpc" "weather_vpc" {
+  cidr_block           = "10.0.0.0/24"
+  enable_dns_hostnames = true
+
+  tags = {
+    Name        = "Bens-Lab-AAP26-vpc"
+    ManagedBy   = "Ansible-and-Terraform"
+    Environment = "Demo"
   }
 }
 
-# 2. Dynamic Subnet Discovery
-data "aws_subnet" "selected" {
-  id     = startswith(var.subnet_name, "subnet-") ? var.subnet_name : null
-  vpc_id = data.aws_vpc.selected.id
+# Create Subnet
+resource "aws_subnet" "weather_subnet" {
+  vpc_id                  = aws_vpc.weather_vpc.id
+  cidr_block              = "10.0.0.0/25"
+  map_public_ip_on_launch = true
 
-  dynamic "filter" {
-    for_each = startswith(var.subnet_name, "subnet-") ? [] : [1]
-    content {
-      name   = "tag:Name"
-      values = [var.subnet_name]
-    }
+  tags = {
+    Name        = "Bens-Lab-AAP26-Subnet"
+    ManagedBy   = "Ansible-and-Terraform"
+    Environment = "Demo"
   }
 }
 
-# 3. Dynamic Security Group Discovery
-data "aws_security_group" "selected" {
-  id     = startswith(var.security_group_name, "sg-") ? var.security_group_name : null
-  vpc_id = data.aws_vpc.selected.id
+# Create Internet Gateway
+resource "aws_internet_gateway" "weather_igw" {
+  vpc_id = aws_vpc.weather_vpc.id
 
-  dynamic "filter" {
-    for_each = startswith(var.security_group_name, "sg-") ? [] : [1]
-    content {
-      name   = "group-name"
-      values = [var.security_group_name]
-    }
+  tags = {
+    Name        = "Bens-Lab-AAP26-IGW"
+    ManagedBy   = "Ansible-and-Terraform"
+    Environment = "Demo"
   }
 }
 
-# 4. Discover the latest official RHEL 9 AMI
+# Create Route Table
+resource "aws_route_table" "weather_rt" {
+  vpc_id = aws_vpc.weather_vpc.id
+
+  tags = {
+    Name        = "Bens-Lab-AAP26-RT"
+    ManagedBy   = "Ansible-and-Terraform"
+    Environment = "Demo"
+  }
+}
+
+# Add Default Internet Route
+resource "aws_route" "default_route" {
+  route_table_id         = aws_route_table.weather_rt.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.weather_igw.id
+}
+
+# Associate Subnet to Route Table
+resource "aws_route_table_association" "subnet_association" {
+  subnet_id      = aws_subnet.weather_subnet.id
+  route_table_id = aws_route_table.weather_rt.id
+}
+
+# Build Security Group
+resource "aws_security_group" "weather_sg" {
+  name        = "ben-lab-sg"
+  description = "Security Group for Weather App Lab Workloads"
+  vpc_id      = aws_vpc.weather_vpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "Bens-Lab-AAP26-SG"
+    ManagedBy   = "Ansible-and-Terraform"
+    Environment = "Demo"
+  }
+}
+
+# ==========================================
+# 2. DYNAMIC SSH KEYPAIR GENERATION
+# ==========================================
+
+# Generate a private RSA SSH key
+resource "tls_private_key" "demo_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# Register the generated public key with AWS
+resource "aws_key_pair" "generated_key" {
+  key_name   = "aap-demo-dynamic-key"
+  public_key = tls_private_key.demo_key.public_key_openssh
+
+  tags = {
+    Name        = "AAP-Demo-Dynamic-Key"
+    ManagedBy   = "Ansible-and-Terraform"
+  }
+}
+
+# ==========================================
+# 3. COMPUTE & APPLICATION PROVISIONING
+# ==========================================
+
+# Discover the latest official RHEL 9 AMI
 data "aws_ami" "rhel9" {
   most_recent = true
   owners      = ["309956199498"]
@@ -78,13 +178,13 @@ data "aws_ami" "rhel9" {
   }
 }
 
-# 5a. Provision Instance A: Web/App Tier
+# Provision Instance A: Web/App Tier
 resource "aws_instance" "web_tier" {
   ami                    = data.aws_ami.rhel9.id
   instance_type          = var.instance_type
-  subnet_id              = data.aws_subnet.selected.id
-  vpc_security_group_ids = [data.aws_security_group.selected.id]
-  key_name               = var.key_name
+  subnet_id              = aws_subnet.weather_subnet.id
+  vpc_security_group_ids = [aws_security_group.weather_sg.id]
+  key_name               = aws_key_pair.generated_key.key_name
 
   tags = {
     Name        = "AAP-Demo-Web-Tier"
@@ -94,14 +194,13 @@ resource "aws_instance" "web_tier" {
   }
 }
 
-# 5b. Provision Instance B: Database Tier
+# Provision Instance B: Database Tier
 resource "aws_instance" "db_tier" {
   ami                    = data.aws_ami.rhel9.id
   instance_type          = var.instance_type
-  subnet_id              = data.aws_subnet.selected.id
-  vpc_security_group_ids = [data.aws_security_group.selected.id]
-  key_name               = var.key_name
-  associate_public_ip_address = true # <--- ADD THIS LINE
+  subnet_id              = aws_subnet.weather_subnet.id
+  vpc_security_group_ids = [aws_security_group.weather_sg.id]
+  key_name               = aws_key_pair.generated_key.key_name
 
   tags = {
     Name        = "AAP-Demo-DB-Tier"
@@ -111,7 +210,7 @@ resource "aws_instance" "db_tier" {
   }
 }
 
-# 6. Allocate and associate an Elastic IP (EIP) only to the Web/App Tier
+# Allocate and associate Elastic IP (EIP) to Web Tier
 resource "aws_eip" "web_eip" {
   instance = aws_instance.web_tier.id
   domain   = "vpc"
@@ -121,33 +220,41 @@ resource "aws_eip" "web_eip" {
     ManagedBy   = "Ansible-and-Terraform"
   }
 
-  # --- FIXED: The lifecycle block is now safely nested inside the aws_eip resource ---
   lifecycle {
     action_trigger {
-      events  = [after_create] # FIXED: Wrapped event keyword in quotes
+      events  = ["after_create"]
       actions = [action.aap_job_launch.configure_weather_app]
     }
   }
 }
 
-# 7. Launch the AAP Job Template once infrastructure is ready
+# Launch the AAP Job Template once infrastructure & EIP are ready
 action "aap_job_launch" "configure_weather_app" {
   config {
     job_template_id                     = var.aap_job_template_id
-    wait_for_completion                 = true 
+    wait_for_completion                 = true
     wait_for_completion_timeout_seconds = 1200
 
     extra_vars = jsonencode({
-      "web_node_ip"  : aws_eip.web_eip.public_ip,
-      "web_node_dns" : aws_eip.web_eip.public_dns,   
-      "db_node_ip"   : aws_instance.db_tier.private_ip,
-      "weather_api_key" : var.weather_api_key, # <-- ADD THIS LINE
-      "environment"  : "demo"
+      "web_node_ip"                     : aws_eip.web_eip.public_ip,
+      "web_node_dns"                    : aws_eip.web_eip.public_dns,
+      "db_node_ip"                      : aws_instance.db_tier.private_ip,
+      "ansible_ssh_private_key_content" : tls_private_key.demo_key.private_key_pem,
+      "ansible_user"                    : "ec2-user",
+      "weather_api_key"                 : var.weather_api_key,
+      "environment"                     : "demo"
     })
   }
 }
 
-# --- Outputs for Visibility ---
+# ==========================================
+# 4. OUTPUTS
+# ==========================================
+
+output "vpc_id" {
+  value       = aws_vpc.weather_vpc.id
+  description = "The ID of the newly created VPC"
+}
 
 output "web_public_ip" {
   value       = aws_eip.web_eip.public_ip

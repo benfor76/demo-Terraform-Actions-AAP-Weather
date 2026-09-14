@@ -1,26 +1,7 @@
 variable "aws_region" {
   type        = string
+  default     = "us-east-1"
   description = "The target AWS Region for deployment"
-}
-
-variable "vpc_name" {
-  type        = string
-  description = "The ID or Name Tag of the existing VPC"
-}
-
-variable "subnet_name" {
-  type        = string
-  description = "The ID or Name Tag of the target Subnet"
-}
-
-variable "security_group_name" {
-  type        = string
-  description = "The ID or Name Tag of the target Security Group"
-}
-
-variable "key_name" {
-  type        = string
-  description = "The AWS SSH Key Pair name for EC2 access"
 }
 
 variable "instance_type" {
