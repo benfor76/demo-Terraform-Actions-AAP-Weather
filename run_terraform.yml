@@ -1,7 +1,6 @@
 ---
 - name: Run Terraform Provisioning
   hosts: localhost
-  connection: local
   gather_facts: false
   tasks:
     - name: Initialize and Apply Terraform
@@ -9,6 +8,13 @@
         project_path: "{{ playbook_dir }}/terraform"
         state: present
         force_init: true
+        variables:
+          aws_region: "{{ aws_region | default('us-east-1') }}"
+          instance_type: "{{ instance_type | default('t3.medium') }}"
+          aap_hostname: "{{ aap_hostname }}"
+          aap_token: "{{ aap_token }}"
+          aap_job_template_id: "{{ aap_job_template_id }}"
+          weather_api_key: "{{ weather_api_key }}"
       register: tf_output
 
     - name: Debug Terraform outputs
