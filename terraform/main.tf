@@ -150,7 +150,7 @@ resource "tls_private_key" "demo_key" {
 
 # Register the generated public key with AWS
 resource "aws_key_pair" "generated_key" {
-  key_name   = "aap-demo-dynamic-key"
+  key_name_prefix   = "aap-demo-key-"
   public_key = tls_private_key.demo_key.public_key_openssh
 
   tags = {
