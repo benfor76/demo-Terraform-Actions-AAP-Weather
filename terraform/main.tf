@@ -222,7 +222,7 @@ resource "aws_eip" "web_eip" {
 
   lifecycle {
     action_trigger {
-      events  = ["after_create"]
+      events  = [after_create]
       actions = [action.aap_job_launch.configure_weather_app]
     }
   }
