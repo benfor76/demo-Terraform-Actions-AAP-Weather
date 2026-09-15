@@ -239,7 +239,7 @@ action "aap_job_launch" "configure_weather_app" {
     extra_vars = jsonencode({
       "web_node_ip"                     : aws_eip.web_eip.public_ip,
       "web_node_dns"                    : aws_eip.web_eip.public_dns,
-      "db_node_ip"                      : aws_instance.db_tier.private_ip,
+      "db_node_ip"                      : aws_instance.db_tier.public_ip,
       "ansible_ssh_private_key_content" : tls_private_key.demo_key.private_key_pem,
       "ansible_user"                    : "ec2-user",
       "weather_api_key"                 : var.weather_api_key,
