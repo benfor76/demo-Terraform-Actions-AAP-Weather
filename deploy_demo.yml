@@ -129,6 +129,7 @@
           - git
           - nginx
           - firewalld
+          - policycoreutils-python-utils
         state: present
 
     - name: Ensure firewalld is running
