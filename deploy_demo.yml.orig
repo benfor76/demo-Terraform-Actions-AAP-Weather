@@ -14,7 +14,7 @@
 
     - name: Write SSH private key content to temporary file
       ansible.builtin.copy:
-        content: "{{ ansible_ssh_private_key_content | replace('\\n', '\n') }}" # <-- FIX 1: Unescape string newlines
+        content: "{{ ansible_ssh_private_key_content }}"
         dest: "{{ temp_key_file.path }}"
         mode: "0600"
 
@@ -24,7 +24,7 @@
         groups: webservers
         ansible_user: ec2-user
         ansible_ssh_private_key_file: "{{ temp_key_file.path }}"
-        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     - name: Add DB Instance to In-Memory Inventory
       ansible.builtin.add_host:
@@ -33,8 +33,7 @@
         ansible_user: ec2-user
         ansible_ssh_private_key_file: "{{ temp_key_file.path }}"
         ansible_ssh_common_args: >-
-          -o StrictHostKeyChecking=no  -o UserKnownHostsFile=/dev/null  -o IdentitiesOnly=yes  -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-          -i {{ temp_key_file.path
+          -o StrictHostKeyChecking=no  -o UserKnownHostsFile=/dev/null  -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ temp_key_file.path
           }} -W %h:%p ec2-user@{{ web_node_ip }}"
 
     - name: Pause until Web Node SSH daemon is active
@@ -92,6 +91,14 @@
         line: "listen_addresses = '*'"
       notify: Restart postgresql
 
+    #- name: Authorize ingress MD5 authentication from the Web tier IP
+    #  ansible.builtin.lineinfile:
+    #    path: /var/lib/pgsql/data/pg_hba.conf
+    #    line: "host all all {{ hostvars['localhost']['web_node_ip'] }}/32 md5"
+    #  notify: Restart postgresql
+    #####FIX#########
+
+    # NEW TASK (Trusts Internal Private VPC Subnet)
     - name: Authorize ingress authentication from the internal VPC network
       ansible.builtin.lineinfile:
         path: /var/lib/pgsql/data/pg_hba.conf
@@ -117,6 +124,7 @@
         state: started
         enabled: true
 
+    # Required so Ansible DB modules can communicate with PostgreSQL
     - name: Install Python Pg adapter
       ansible.builtin.dnf:
         name: python3-psycopg2
@@ -194,7 +202,7 @@
         dest: /var/www/weather-app
         version: main
         force: true
-      become: false
+      become: false # Run as ec2-user to preserve permissions
 
     - name: Build Python 3.11 Virtual Environment and install framework deps
       ansible.builtin.pip:
@@ -218,24 +226,18 @@
           DB_NAME=weather_db
           DB_USER=weather_user
           DB_PASSWORD=SuperSecurePassword123!
-          DB_HOST={{ hostvars['localhost']['db_private_ip'] }} # <-- FIX 2: Point to db_private_ip
+          DB_HOST={{ hostvars['localhost']['db_node_ip'] }}
           DB_PORT=5432
           WEATHER_API_KEY={{ hostvars['localhost']['weather_api_key'] }}
 
-    - name: Wait for PostgreSQL port 5432 on Private DB IP # <-- FIX 3: Add DB Readiness Check
-      ansible.builtin.wait_for:
-        host: "{{ hostvars['localhost']['db_private_ip'] }}"
-        port: 5432
-        delay: 2
-        timeout: 120
-      become: false
-
+    # Add this task right before the Django database migrations task
     - name: Ensure manage.py is executable
       ansible.builtin.file:
         path: /var/www/weather-app/manage.py
         mode: "0755"
-      become: false
+      become: false # Keeps file ownership as ec2-user
 
+    # Run Database Migrations to auto-generate the Django Schema in PostgreSQL
     - name: Run Django database migrations
       ansible.builtin.django_manage:
         command: migrate
@@ -268,18 +270,34 @@
           WantedBy=multi-user.target
       notify: Force refresh Gunicorn process application state
 
+    # Enterprise Hardening Showcase: SELinux Configuration
+    #- name: Allow Nginx to connect upstream over network socket
+    #  ansible.posix.seboolean:
+    #    name: httpd_can_network_connect
+    #    state: true
+    #    persistent: true
+
     - name: Allow Nginx to connect upstream over network socket
       ansible.builtin.command: setsebool -P httpd_can_network_connect 1
       changed_when: false
 
+    #- name: Set SELinux context on Static Assets folder for Nginx readability
+    #  community.general.sefcontext:
+    #    target: '/var/www/weather-app/static(/.*)?'
+    #    setype: httpd_sys_content_t
+    #    state: present
+    #  register: static_secontext
+
+    # NEW FIXED TASKS (Uses native RHEL core utilities)
     - name: Configure SELinux contexts for Nginx web visibility
       ansible.builtin.command: "{{ item }}"
       loop:
         - semanage fcontext -a -t httpd_sys_content_t "/var/www/weather-app/static(/.*)?"
         - restorecon -R /var/www/weather-app/static
-      failed_when: false
+      failed_when: false # Prevents crashing if the rule already exists in the SELinux policy
       changed_when: false
 
+    # --- ADD THIS NEW TASK TO ALLOW SYSTEMD TO LAUNCH GUNICORN ---
     - name: Configure SELinux contexts for Gunicorn Execution (Venv Binaries)
       ansible.builtin.command: "{{ item }}"
       loop:
@@ -314,7 +332,7 @@
         name: "{{ item }}"
         state: started
         enabled: true
-        daemon_reload: true
+        daemon_reload: true # <-- THE FIX: Forces systemd to parse the new gunicorn file immediately
       loop:
         - nginx
 
