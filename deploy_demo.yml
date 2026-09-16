@@ -218,7 +218,7 @@
           DB_NAME=weather_db
           DB_USER=weather_user
           DB_PASSWORD=SuperSecurePassword123!
-          DB_HOST={{ hostvars['localhost']['db_private_ip'] }} # <-- FIX 2: Point to db_private_ip
+          DB_HOST={{ hostvars['localhost']['db_private_ip'] }}
           DB_PORT=5432
           WEATHER_API_KEY={{ hostvars['localhost']['weather_api_key'] }}
 
