@@ -30,6 +30,20 @@
         delay: 15
         timeout: 300
 
+    - name: Wait for cloud-init to finish installing authorized_keys
+      ansible.builtin.command: >
+        ssh -o StrictHostKeyChecking=no
+            -o UserKnownHostsFile=/dev/null
+            -i /dev/null
+            ec2-user@{{ web_node_ip }} "echo Ready"
+      register: ssh_check
+      until: ssh_check.rc == 0
+      retries: 10
+      delay: 10
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
 # ==============================================================================
 # PLAY 2: Configure Database Tier (PostgreSQL 16)
 # ==============================================================================
