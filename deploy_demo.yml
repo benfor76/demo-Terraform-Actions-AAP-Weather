@@ -54,7 +54,7 @@
       register: ssh_check
       until: ssh_check.rc == 0
       retries: 10
-      delay: 10
+      delay: 5
       changed_when: false
       failed_when: false
       delegate_to: localhost
