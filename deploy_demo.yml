@@ -6,6 +6,18 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Create temporary file for private key on AAP runner
+      ansible.builtin.tempfile:
+        state: file
+        suffix: _aap_rsa_key
+      register: temp_key_file
+
+    - name: Write SSH private key content to temporary file
+      ansible.builtin.copy:
+        content: "{{ ansible_ssh_private_key_content }}"
+        dest: "{{ temp_key_file.path }}"
+        mode: "0600"
+
     - name: Add Web Instance to In-Memory Inventory
       ansible.builtin.add_host:
         name: "{{ web_node_ip }}"
@@ -359,3 +371,16 @@
           - "'Weather' in web_smoke_test.content"
         fail_msg: "Demo Verification Failed: Site responded, but weather metadata is missing."
         success_msg: "DEMO SUCCESSFUL: Weather Application is active and verified at http://{{ web_node_ip }}/"
+
+# ==============================================================================
+# PLAY 5: Clean Up Staged SSH Key File
+# ==============================================================================
+- name: Clean Up Staged Private Key File
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Remove temporary SSH key file from AAP runner
+      ansible.builtin.file:
+        path: "{{ hostvars['localhost']['temp_key_file']['path'] }}"
+        state: absent
+      when: hostvars['localhost']['temp_key_file']['path'] is defined
